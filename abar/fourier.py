@@ -137,7 +137,7 @@ def reconstruct_signal(signal: np.array, T: float, a_m: np.array, b_m: np.array)
     a_0 = np.mean(signal[:,1])
     recon = np.full_like(signal[:, 1], a_0)  # Initialize with signal average value
     
-    for m, (a, b) in enumerate(zip(a_m[:,0], b_m[:,0]), start=1):
+    for m, (a, b) in enumerate(zip(a_m, b_m), start=1):
         # Add each harmonic contribution using a contracted expression
         d = np.sqrt(np.power(a,2) + np.power(b,2))
         phi = np.arctan2(a, b)
@@ -388,7 +388,8 @@ def get_diffusivity(P_coeff: np.array, Q_coeff: np.array, T: float, L: float):
     # Calculate diffusivity
     diffusivity_m = ((np.power(L, 2) * np.pi * m) / T) * np.power(Tan * Ln, -1)
 
-    return diffusivity_m
+
+    return diffusivity_m, conductivity
 
 
 
@@ -458,12 +459,12 @@ def main():
     noise = read_angstrom_data(noise_path)
     noise = noise[noise[:,1] < 1]
     thermal_uncertainty = get_thermal_uncertainty(noise[:,[0, 2]])
-    # print(thermal_uncertainty)
+    print(thermal_uncertainty)
     # RESULT: thermal uncertainty = FWHM of histogram = 0.2 degrees C
 
     # Diffusivity
     # square_wave_example()
-    # analysis() 
+    analysis() 
     data = read_angstrom_data(data_path)
     # data = data[data[:, 0] > 2200, :]
     # print(len(data))
@@ -484,15 +485,21 @@ def main():
     T = ufloat(800, 1)
 
     D_m = get_diffusivity(P_coef, Q_coef, T, L)
+    # Prepare the data for saving
+    data_to_save = np.array([[d.nominal_value, d.std_dev] for d in D_m])
+
+    # Save to a text file
+    np.savetxt('Diff_data.txt', data_to_save, fmt=['%.8e', '%.8e'], delimiter=',', header='Diffusivity, Uncertainty', comments='')
+    
     print(D_m)
     D_m = np.array([d.nominal_value for d in D_m])
     
     fig, ax = plt.subplots(1, figsize=(8, 5))
     m = np.arange(1, D_m.shape[0] + 1, 1)
     ax.stem(m, D_m, linefmt='r', label='$D_m$')
-    ax.set(xlabel='$m$', ylabel='Diffusivity')
+    ax.set(xlabel='modes', ylabel='Diffusivity [$m^2/s$]')
     ax.legend()
-    ax.set(yscale='log')
+    # ax.set(ylim=(-1e-2, 1e-2))
     plt.grid(True)
     plt.tight_layout()
     plt.show()
