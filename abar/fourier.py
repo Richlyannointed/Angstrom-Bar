@@ -2,6 +2,7 @@
 Fourier coefficient extraction of periodic Angstrom Bar data
 11 October 2024
 Nathan Ngqwebo
+Note: recommended Python Version: 11 or higher [type hinting] 
 """
 import matplotlib.pyplot as plt
 import ipywidgets as widgets
@@ -16,6 +17,8 @@ noise_path = os.path.join(os.getcwd(), 'cold_noise.csv')
 data_path = os.path.join(os.getcwd(), 'data.csv')
 plt.rcParams.update({'font.size': 15})
 
+BAR_HEAT_CAPACITY = ufloat(385, 0)
+BAR_DENSITY = ufloat(8.45e3, 0)
 
 def read_angstrom_data(filename:str) -> np.array:
     data = np.loadtxt(filename, skiprows=4, delimiter=',').astype(float)
@@ -261,31 +264,34 @@ def get_thermal_uncertainty(noise:np.array) -> float:
     # data = np.random.normal(loc=0, scale=1, size=100)  # Example normal data
     data = noise[:,1]
     std_dev = np.std(data)
-
+    # fig, ax = plt.subplots(1, figsize=(6, 5))
     # 1. Visual Inspection
     # Histogram
-    plt.figure(figsize=(12, 6))
-    plt.subplot(1, 2, 1)
-    sns.histplot(data, bins=6, kde=True)
-    plt.title('Histogram')
-
-    # Q-Q Plot
-    plt.subplot(1, 2, 2)
-    stats.probplot(data, dist="norm", plot=plt)
-    plt.title('Q-Q Plot')
+    plt.figure(figsize=(6, 5))
+    plt.subplot(1, 1, 1)
+    sns.histplot(data, bins=6, color='grey')
+    plt.xlabel('Temperature [K]')
+    plt.ylabel('Count')
+    # plt.title('Histogram')
     plt.tight_layout()
+    plt.savefig('noise.pdf')
     plt.show()
 
-    # 2. Statistical Tests
-    shapiro_test = stats.shapiro(data)
-    print("Shapiro-Wilk Test: statistic =", shapiro_test.statistic, ", p-value =", shapiro_test.pvalue)
+    # # Q-Q Plot
+    # plt.subplot(1, 2, 2)
+    # stats.probplot(data, dist="norm", plot=plt)
+    # plt.title('Q-Q Plot')
 
-    anderson_test = stats.anderson(data)
-    print("Anderson-Darling Test: statistic =", anderson_test.statistic, ", critical values =", anderson_test.critical_values)
+    # # 2. Statistical Tests
+    # shapiro_test = stats.shapiro(data)
+    # print("Shapiro-Wilk Test: statistic =", shapiro_test.statistic, ", p-value =", shapiro_test.pvalue)
 
-    ks_test = stats.kstest(data, 'norm', args=(np.mean(data), np.std(data)))
-    print("Kolmogorov-Smirnov Test: statistic =", ks_test.statistic, ", p-value =", ks_test.pvalue)
-    # var = np.histogram(noise[:,1])
+    # anderson_test = stats.anderson(data)
+    # print("Anderson-Darling Test: statistic =", anderson_test.statistic, ", critical values =", anderson_test.critical_values)
+
+    # ks_test = stats.kstest(data, 'norm', args=(np.mean(data), np.std(data)))
+    # print("Kolmogorov-Smirnov Test: statistic =", ks_test.statistic, ", p-value =", ks_test.pvalue)
+    # # var = np.histogram(noise[:,1])
 
     return std_dev
 
@@ -387,10 +393,9 @@ def get_diffusivity(P_coeff: np.array, Q_coeff: np.array, T: float, L: float):
 
     # Calculate diffusivity
     diffusivity_m = ((np.power(L, 2) * np.pi * m) / T) * np.power(Tan * Ln, -1)
-
-
+    conductivity = BAR_DENSITY * BAR_HEAT_CAPACITY * diffusivity_m
+    # print(diffusivity_m)
     return diffusivity_m, conductivity
-
 
 
 def analysis() -> None:
@@ -457,9 +462,9 @@ def main():
 
     # Noise Characterisation
     noise = read_angstrom_data(noise_path)
-    noise = noise[noise[:,1] < 1]
-    thermal_uncertainty = get_thermal_uncertainty(noise[:,[0, 2]])
-    print(thermal_uncertainty)
+    # noise = noise[noise[:,1] < 1]
+    # thermal_uncertainty = get_thermal_uncertainty(noise[:,[0, 2]])
+    # print(thermal_uncertainty)
     # RESULT: thermal uncertainty = FWHM of histogram = 0.2 degrees C
 
     # Diffusivity
@@ -470,7 +475,7 @@ def main():
     # print(len(data))
     T_on = 500
     T = 800
-    M = 20 # number of coefficients
+    M = 4 # number of coefficients
     # delta_f = get_thermal_uncertainty(noise[:,[0, 2]]) # thermocouple standard uncertainty
     delta_f = 0.2
     noise_signal = noise[:, [0, 1]]
@@ -481,19 +486,21 @@ def main():
     P_coef = numerical_decomposition(P_signal, T, M, delta_f)
     Q_coef = numerical_decomposition(Q_signal, T, M, delta_f)
 
-    L = ufloat(6, 0.1) / 100
-    T = ufloat(800, 1)
+    L = ufloat(6, 0.02) / 100 # rectangular PDF
+    T = ufloat(800, 0.577) # triangular distribution
 
-    D_m = get_diffusivity(P_coef, Q_coef, T, L)
+    D_m, alpha_m = get_diffusivity(P_coef, Q_coef, T, L)
     # Prepare the data for saving
-    data_to_save = np.array([[d.nominal_value, d.std_dev] for d in D_m])
+    # data_to_save = np.array([[d.nominal_value, d.std_dev, a.nominal_value, a.std_dev] for d, a in zip(D_m , alpha_m)])
+    data_to_save = np.array([[d, a] for d, a in zip(D_m , alpha_m)])
 
     # Save to a text file
-    np.savetxt('Diff_data.txt', data_to_save, fmt=['%.8e', '%.8e'], delimiter=',', header='Diffusivity, Uncertainty', comments='')
-    
-    print(D_m)
-    D_m = np.array([d.nominal_value for d in D_m])
-    
+    # np.savetxt('Diff_data.txt', data_to_save, fmt=['%.8e', '%.8e', '%.8e', '%.8e'], delimiter=',', header='D_m, delta_D_m, alpha_m, delta_alpha_m', comments='')
+    np.savetxt('Diff_data.txt', data_to_save, fmt=['%s', '%s'], delimiter=',', header='D_m, delta_D_m, alpha_m, delta_alpha_m', comments='')
+
+    # print(D_m)
+    D_m = np.array([abs(d.nominal_value) for d in D_m])
+    # print(alpha_m)
     fig, ax = plt.subplots(1, figsize=(8, 5))
     m = np.arange(1, D_m.shape[0] + 1, 1)
     ax.stem(m, D_m, linefmt='r', label='$D_m$')
